@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Held back on purpose. README.md says why, and the code runs without them.
+lime_bg_*.npz
+assets/terrain_comilla.tif
+
+# Never publishable.
+demo_wells.csv
+geol_lookup.csv
+feature_grid_30m.tif
+data*.csv
+*.xlsx
+assets/_soil_tiles_*/

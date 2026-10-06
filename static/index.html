@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tubewell arsenic screening for Bangladesh</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C11 11 7 15.5 7 20a9 9 0 0018 0c0-4.5-4-9-9-17z' fill='%234C72B0'/%3E%3C/svg%3E">
+<!-- Leaflet 1.9.4, vendored rather than pulled from a CDN: the app should not depend on a third-party
+     script host staying up, and the container already ships everything else it needs. Map TILES do come
+     over the network, which is the one runtime dependency this map introduces. -->
+<link rel="stylesheet" href="/static/leaflet/leaflet.css">
+<script src="/static/leaflet/leaflet.js"></script>
+<style>
+:root{
+  --bg:#f6f8fa; --card:#ffffff; --border:#d0d7de; --text:#1f2328; --muted:#57606a;
+  --accent:#0969da; --chipbg:#f6f8fa; --green:#1a7f37; --amber:#9a6700; --red:#cf222e;
+  --warnbg:#fff8f0; --warnborder:#f0b37e; --track:#e6e9ec; --shadow:0 1px 3px rgba(31,35,40,.06);
+  --label:#3d4650; --labelhalo:#ffffff; --region:#0969da;
+}
+[data-theme="dark"]{
+  --bg:#0d1117; --card:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e;
+  --accent:#4493f8; --chipbg:#21262d; --green:#3fb950; --amber:#d29922; --red:#f85149;
+  --warnbg:#2a2016; --warnborder:#9e6a03; --track:#21262d; --shadow:none;
+  --label:#e6edf3; --labelhalo:#0d1117; --region:#4493f8;
+}
+/* Type scale: four steps, each about 1.25x the one below, floored at 13px. The interface
+   previously used ten sizes between 11 and 21 px, which is a lot of near-identical text and no
+   hierarchy, and its smallest labels were 11px. This is a tool people will read outdoors on a
+   phone, so the whole scale moved up rather than only the offending sizes. */
+:root{--fs-xs:13px;--fs-sm:17px;--fs-md:23px;--fs-lg:31px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:var(--fs-sm)/1.55 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:24px 20px 60px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px}
+h1{font-size:var(--fs-lg);margin:0 0 4px}
+.sub{color:var(--muted);max-width:760px}
+button{font:inherit;cursor:pointer}
+.themebtn{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--text)}
+.cols{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,6fr);gap:20px}
+@media(max-width:980px){.cols{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px 20px;
+  margin-bottom:16px;box-shadow:var(--shadow)}
+.cardhead{display:flex;align-items:baseline;gap:10px}
+.cardhead h2{font-size:var(--fs-md);margin:0;flex:1}
+/* The map is a Leaflet instance over OpenStreetMap tiles. It replaced a hand-rolled pan and zoom over a
+   single 560px raster of the whole country: that image held about 900 m per pixel, so past 6x there was
+   nothing left to reveal, and every place name had to be drawn and collision-tested by hand. Tiles carry
+   their own detail and their own labels down to village level. */
+#map{height:520px;border:1px solid var(--border);border-radius:8px;margin:12px 0 6px;z-index:0}
+@media(max-width:980px){#map{height:400px}}
+#map .leaflet-container{font:inherit}
+/* Leaflet writes its own control and attribution styles, which assume a light background. These follow the
+   app's theme instead so the dark theme does not end up with black text on a dark panel. */
+.leaflet-bar a,.leaflet-control-attribution{background:var(--card);color:var(--text)}
+.leaflet-bar a:hover{background:var(--chipbg)}
+.leaflet-bar a{border-bottom-color:var(--border)}
+.leaflet-control-attribution a{color:var(--accent)}
+.leaflet-control-attribution{font-size:11px}
+[data-theme="dark"] .leaflet-tile{filter:brightness(.82) contrast(1.06)}
+.region-outline{color:var(--region)}
+/* Clicking an SVG path focuses it, and the browser draws its default focus ring around the element's
+   BOUNDING BOX. On an irregular upazila that ring is a rectangle straddling the map, which is what appeared
+   whenever someone picked a spot inside the study area. Suppressed for pointer input only: :focus-visible
+   still draws a ring for keyboard users, who genuinely need to see where focus is. */
+#map path.leaflet-interactive:focus{outline:none}
+#map path.leaflet-interactive:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mapcap{color:var(--muted);font-size:var(--fs-sm);margin:6px 0 12px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:var(--fs-xs);margin:2px 0 10px}
+.swatch{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px;
+  background:color-mix(in srgb, var(--region) 24%, transparent);border:1px solid var(--region)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+label.f{display:block;font-size:var(--fs-xs);letter-spacing:.05em;color:var(--muted);text-transform:uppercase;
+  margin-bottom:4px;font-weight:600}
+input[type=number]{width:100%;background:var(--card);border:1px solid var(--border);border-radius:8px;
+  padding:8px 10px;color:var(--text);font:inherit}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.range-row{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center;margin-top:12px}
+.range-ends{display:flex;justify-content:space-between;color:var(--muted);font-size:var(--fs-xs);margin-top:2px}
+.primary{width:100%;background:var(--accent);border:none;color:#fff;font-weight:600;border-radius:8px;
+  padding:11px;margin-top:14px;font-size:var(--fs-md)}
+.primary:disabled{opacity:.6}
+.sticky{position:sticky;top:16px}
+.rc-title{font-size:var(--fs-xs);letter-spacing:.08em;color:var(--muted);font-weight:700}
+.modelline{border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;
+  padding:9px 13px;margin-top:12px;font-size:var(--fs-sm);background:var(--chipbg)}
+.modelline .where{color:var(--muted);font-size:var(--fs-xs);display:block;margin-top:2px}
+.verdict{border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-top:12px;background:var(--chipbg)}
+.verdict .std{color:var(--muted);font-size:var(--fs-sm)}
+.bandchip{display:inline-block;margin:8px 0 10px;padding:6px 14px;border-radius:8px;font-weight:700;
+  border:1.5px solid;font-size:var(--fs-md)}
+.band-LOW{color:var(--green);border-color:var(--green)}
+.band-ELEV{color:var(--amber);border-color:var(--amber)}
+.band-HIGH{color:var(--red);border-color:var(--red)}
+.bar{height:8px;background:var(--track);border-radius:99px;overflow:hidden;margin:2px 0 6px}
+.bar>div{height:100%;border-radius:99px;transition:width .35s}
+.pct{font-weight:700;float:right}
+.confbox{display:flex;gap:12px;align-items:center;border:1px solid var(--border);border-radius:8px;
+  padding:10px 14px;margin-top:12px}
+/* Inside a verdict card these are sections of it, not cards in their own right. */
+/* Shown only when the served thresholds disagree on which model answered, so it needs its own line rather
+   than running into the standard and accuracy that follow it. */
+.verdict .cardmodel{display:block;color:var(--fg);font-weight:600;margin-bottom:4px}
+.verdict .confbox{border:none;border-top:1px solid var(--border);border-radius:0;padding:10px 0 0}
+.verdict .factors{border-top:1px solid var(--border);padding-top:12px}
+.confbox .dots{letter-spacing:2px}
+.confbox .note{color:var(--muted);font-size:var(--fs-sm)}
+.factors{margin-top:14px}
+.factors h3{font-size:var(--fs-xs);letter-spacing:.06em;color:var(--muted);margin:0 0 8px;text-transform:uppercase}
+/* CSS uppercasing turns the micro sign into a capital mu, which reads as "10 MG/L": a thousandfold error
+   on a heading in a public health tool. The unit keeps its own case. */
+.factors h3 .unit{text-transform:none}
+.factor{display:flex;justify-content:space-between;gap:10px;padding:6px 2px;border-bottom:1px dashed var(--border)}
+.factor:last-child{border-bottom:none}
+.factor .dir{font-size:var(--fs-xs);font-weight:600}
+.dir.unsafe{color:var(--red)} .dir.safe{color:var(--green)}
+.warn{background:var(--warnbg);border:1px solid var(--warnborder);border-radius:8px;padding:9px 12px;
+  color:var(--amber);font-size:var(--fs-sm);margin-top:12px}
+details{margin-top:12px}
+summary{cursor:pointer;color:var(--accent);font-size:var(--fs-sm)}
+table{border-collapse:collapse;width:100%;margin-top:10px;font-size:var(--fs-sm)}
+th,td{border:1px solid var(--border);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--chipbg);font-weight:600}
+.disclaimer{margin-top:14px;font-size:var(--fs-sm);color:var(--muted);border-top:1px solid var(--border);padding-top:12px}
+.disclaimer b{color:var(--text)}
+.placeholder{color:var(--muted);padding:30px 10px;text-align:center}
+footer{color:var(--muted);font-size:var(--fs-xs);margin-top:26px;text-align:center;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Tubewell arsenic screening for Bangladesh</h1>
+      <div class="sub">Pick a location, give the depth you plan to drill to, and get a screening estimate
+        against the WHO guideline of 10&nbsp;µg/L. <b>This is a screening aid, not a water test.</b></div>
+    </div>
+    <button class="themebtn" id="themebtn">Dark theme</button>
+  </header>
+
+  <div class="cols">
+    <div>
+      <div class="card">
+        <div class="cardhead"><h2>Where do you plan to drill?</h2></div>
+        <div id="map"></div>
+        <div class="legend"><span><span class="swatch"></span>Comilla study area, where the local model
+          applies</span></div>
+        <div class="mapcap">Click the map to set the location, or type the coordinates below. Zoom and drag
+          to find the exact spot. Everything else the models need is looked up from that point
+          automatically.</div>
+        <div class="grid2">
+          <div><label class="f" for="lat">Latitude (°N)</label>
+            <input type="number" id="lat" step="0.0001" value="23.4600"></div>
+          <div><label class="f" for="lon">Longitude (°E)</label>
+            <input type="number" id="lon" step="0.0001" value="91.1800"></div>
+        </div>
+        <div class="range-row">
+          <div><label class="f" for="depthn">Planned depth (m)</label>
+            <input type="number" id="depthn" min="5" max="350" value="45"></div>
+          <div><input type="range" id="depthr" min="5" max="350" value="45">
+            <div class="range-ends"><span>5 m</span><span>350 m</span></div></div>
+        </div>
+        <button class="primary" id="go">Estimate risk</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="sticky">
+        <div class="card">
+          <div class="rc-title">SCREENING RESULT</div>
+          <div id="result"><div class="placeholder">Set a location and press <b>Estimate risk</b>.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div>Based on a research study of groundwater arsenic in Bangladesh. Not a substitute for testing your
+      well water.</div>
+    <div id="attrib"></div>
+  </footer>
+</div>
+
+<script>
+let META = null;
+const $ = id => document.getElementById(id);
+
+// ---------- theme ----------
+$('themebtn').onclick = () => {
+  const el = document.documentElement;
+  const next = el.dataset.theme === 'light' ? 'dark' : 'light';
+  el.dataset.theme = next; localStorage.setItem('theme', next);
+  $('themebtn').textContent = next === 'light' ? 'Dark theme' : 'Light theme';
+};
+if (localStorage.getItem('theme') === 'dark') $('themebtn').onclick();
+
+// ---------- depth number <-> slider ----------
+$('depthr').oninput = () => $('depthn').value = $('depthr').value;
+$('depthn').oninput = () => $('depthr').value = $('depthn').value;
+
+// ---------- map ----------
+// Bangladesh, with a hard bound so the view cannot wander off to another country, and a minimum zoom that
+// keeps the whole country in frame. Leaflet owns pan, zoom, pinch, keyboard and inertia.
+const BD_BOUNDS = L.latLngBounds([20.3, 87.8], [26.9, 92.9]);
+let MAP = null, MARKER = null;
+// Deliberate test seam. App/verify_render.js drives the real map in a real browser, which is how three
+// interaction bugs were caught that a markup check had passed. Script-scope `let` is not reachable from
+// outside, so the handles are published explicitly rather than by accident.
+window.BD_BOUNDS = BD_BOUNDS;
+
+function initMap() {
+  MAP = L.map('map', {
+    center: [23.7, 90.4], zoom: 7, minZoom: 6, maxZoom: 18,
+    maxBounds: BD_BOUNDS, maxBoundsViscosity: 0.9, zoomControl: true,
+  });
+  // CARTO Voyager rather than the OpenStreetMap standard style, for the labels. Standard OSM renders the
+  // `name` tag, which inside Bangladesh is Bengali, so a reader who cannot read Bengali sees no place names
+  // at all on their own side of the border while Indian towns appear in Latin script. Voyager is built from
+  // the same OpenStreetMap data with international labels. Swap `voyager` for `light_all` to get Positron,
+  // the near-monochrome version of the same thing.
+  //
+  // The key became necessary in August 2026, when CARTO started requiring one for the raster endpoint and
+  // began stamping "API KEY REQUIRED" across unauthenticated tiles instead of refusing them, so the map
+  // kept working and nothing logged an error. Free tier, 5 million tile requests a month across raster and
+  // vector. It is public by construction, since a static page cannot hold a secret; CARTO issues it against
+  // the domain given on the request form. Attribution below is a condition of the free tier, do not remove.
+  // CARTO are retiring these raster basemaps in favour of vector, so this URL has a shelf life.
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=cb1_2e29_1_d728faf544ae65b85527e3d5', {
+    maxZoom: 19, subdomains: 'abcd',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
+                 '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+  }).addTo(MAP);
+  MAP.fitBounds(BD_BOUNDS.pad(-0.02));
+  window.MAP = MAP;
+
+  // The study area, drawn from the same file the router uses, so what a user sees and what decides the
+  // model can never drift apart.
+  if (META && META.local_region) {
+    L.geoJSON({type: 'FeatureCollection', features: META.local_region.map(r => ({
+      type: 'Feature', properties: {name: r.name},
+      geometry: {type: 'Polygon', coordinates: [r.ring]}}))}, {
+      className: 'region-outline', weight: 2, opacity: .9, fillOpacity: .18,
+      color: getComputedStyle(document.documentElement).getPropertyValue('--region').trim() || '#0969da',
+    }).bindTooltip(l => l.feature.properties.name + ' upazila').addTo(MAP);
+  }
+
+  MAP.on('click', ev => {
+    $('lat').value = ev.latlng.lat.toFixed(4);
+    $('lon').value = ev.latlng.lng.toFixed(4);
+    placeMarker(ev.latlng.lat, ev.latlng.lng);
+    estimate();
+  });
+}
+
+function placeMarker(lat, lon, fly) {
+  if (!MAP) return;
+  const at = [lat, lon];
+  if (MARKER) MARKER.setLatLng(at);
+  else MARKER = L.circleMarker(at, {radius: 7, color: '#d1242f', weight: 3, fillColor: '#fff',
+                                    fillOpacity: 1}).addTo(MAP);
+  window.MARKER = MARKER;
+  if (fly) MAP.setView(at, Math.max(MAP.getZoom(), 12));
+}
+
+// Typing coordinates by hand should move the pin too, otherwise the map and the inputs disagree.
+for (const id of ['lat', 'lon']) {
+  $(id).addEventListener('change', () => {
+    const la = +$('lat').value, lo = +$('lon').value;
+    if (isFinite(la) && isFinite(lo)) placeMarker(la, lo, true);
+  });
+}
+
+// ---------- boot ----------
+fetch('/api/meta').then(r => r.json()).then(m => {
+  META = m;
+  initMap();
+  $('attrib').textContent = m.attribution || '';
+
+  const q = new URLSearchParams(location.search);
+  if (q.get('lat') && q.get('lon')) {
+    $('lat').value = q.get('lat'); $('lon').value = q.get('lon');
+    if (q.get('depth')) { $('depthn').value = q.get('depth'); $('depthr').value = q.get('depth'); }
+    placeMarker(+q.get('lat'), +q.get('lon'), true);
+    estimate();
+  }
+});
+
+// ---------- estimate ----------
+async function estimate() {
+  $('go').disabled = true;
+  try {
+    // One request per served threshold. They share every feature lookup, so the second costs the model
+    // call and nothing else.
+    const ths = (META && META.thresholds) || [10];
+    const body = {lat: +$('lat').value, lon: +$('lon').value, depth: +$('depthn').value};
+    const results = await Promise.all(ths.map(t => fetch('/api/predict', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({...body, threshold: t})
+    }).then(r => r.json())));
+    render(results);
+  } catch (e) {
+    $('result').innerHTML = `<div class="warn">Request failed: ${e}</div>`;
+  } finally { $('go').disabled = false; }
+}
+$('go').onclick = estimate;
+
+const CONF_NOTE = {High: 'Stable at these inputs.',
+                   Moderate: 'Reasonably stable; treat the exact number loosely.'};
+
+function valuesTable(r, label) {
+  return `<details><summary>show the values used${label ? ' at ' + label : ''}</summary><table>
+      ${Object.entries(r.features).map(([k, v]) => `<tr><td>${k}</td><td>${v ?? 'missing'}</td></tr>`).join('')}
+    </table></details>`;
+}
+
+// Everything inside this block belongs to ONE threshold. The two thresholds are served by two separately
+// selected models, so the accuracy, the confidence and the explanation all differ between them and none of
+// the three can be printed once above both. `own` carries the same rule to the model name and the values
+// table, which render above the cards while every served threshold agrees on them.
+function verdictBlock(r, own) {
+  const cls = r.band.startsWith('HIGH') ? 'HIGH' : r.band.startsWith('ELEV') ? 'ELEV' : 'LOW';
+  const color = cls === 'HIGH' ? 'var(--red)' : cls === 'ELEV' ? 'var(--amber)' : 'var(--green)';
+  return `
+    <div class="verdict">
+      ${own.model ? `<span class="std cardmodel">${r.model_inputs || r.model_label}</span>` : ''}
+      <span class="std">${r.standard} · ${r.threshold_ugl} µg/L · ${(100 * r.accuracy).toFixed(1)}% accurate</span>
+      <span class="pct">${(100 * r.p_unsafe).toFixed(0)}%</span>
+      <div><span class="bandchip band-${cls}">${r.band}</span></div>
+      <div class="bar"><div style="width:${(100 * r.p_unsafe).toFixed(0)}%;background:${color}"></div></div>
+      <span class="std">estimated chance arsenic exceeds ${r.threshold_ugl} µg/L</span>
+      <div class="confbox"><b>Confidence: ${r.confidence}</b><span class="dots">${r.confidence_dots}</span>
+        <span class="note">${CONF_NOTE[r.confidence] || 'Treat as indicative only.'}</span></div>
+      <div class="factors"><h3>Main factors at <span class="unit">${r.threshold_ugl} µg/L</span></h3>
+        ${r.factors.length ? r.factors.map(f =>
+          `<div class="factor"><span>${f.feature}</span>
+           <span class="dir ${f.direction.includes('unsafe') ? 'unsafe' : 'safe'}">${f.direction}</span></div>`).join('')
+          : '<div class="factor"><span>none</span></div>'}</div>
+      ${own.values ? valuesTable(r, r.threshold_ugl + ' µg/L') : ''}
+    </div>`;
+}
+
+// Takes the array of results, one per served threshold. Only the place is shared unconditionally. The
+// model name and the values table describe ONE model, so they are hoisted above the cards only after
+// checking that every served threshold agrees on them, rather than by reading rs[0] and assuming. Today
+// they do agree: one threshold is served, and even with both, a scope uses one feature set throughout.
+function render(all) {
+  const rs = Array.isArray(all) ? all : [all];
+  const bad = rs.find(x => !x.ok);
+  if (bad) { $('result').innerHTML = `<div class="warn">${bad.error || 'The estimate failed.'}</div>`; return; }
+  const r = rs[0];
+  const same = (f) => rs.every(x => JSON.stringify(f(x)) === JSON.stringify(f(r)));
+  const oneModel = same(x => x.model_inputs || x.model_label);
+  const oneSetOfValues = same(x => x.features);
+  const where = r.scope === 'local'
+    ? `Inside the Comilla study area${r.upazila ? ', ' + r.upazila + ' upazila' : ''}.`
+    : 'Outside the Comilla study area.';
+  const warns = [...new Set([].concat(...rs.map(x => x.warnings)))];
+  // An explicit arrow, not `rs.map(verdictBlock)`: map passes the index as the second argument, which would
+  // hand the first card a falsy 0 and every other card a truthy index.
+  $('result').innerHTML = `
+    <div class="modelline">${oneModel ? `<b>${r.model_inputs || r.model_label}</b>` : ''}
+      <span class="where">${where}</span></div>
+    ${rs.map(x => verdictBlock(x, {model: !oneModel, values: !oneSetOfValues})).join('')}
+    ${warns.map(w => `<div class="warn">${w}</div>`).join('')}
+    ${oneSetOfValues ? valuesTable(r) : ''}
+    <div class="disclaimer"><b>Screening estimate only.</b> ${r.disclaimer}</div>`;
+}
+</script>
+</body>
+</html>

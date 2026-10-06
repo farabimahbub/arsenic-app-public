@@ -1,0 +1,63 @@
+{
+  "key": "national",
+  "threshold_ugl": 10,
+  "scope": "national",
+  "serves": true,
+  "pre_drilling": true,
+  "label": "location, depth and surface geology",
+  "version": "grid-exact-v1",
+  "created": "2026-09-02",
+  "source_config": "experiments/NX2_minus_satellite/",
+  "training_data": "NX2_minus_satellite/data.csv (2827 train / 707 test wells, stratified 80/20 split, fixed random state)",
+  "features": [
+    "Latitude",
+    "Longitude",
+    "Actual_Depth(m)",
+    "surf_geo"
+  ],
+  "features_kept_after_preprocessing": [
+    "Latitude",
+    "Longitude",
+    "Actual_Depth(m)",
+    "surf_geo"
+  ],
+  "target": "Safe10 = arsenic <= 10 ug/L (class 1 = safe, class 0 = unsafe)",
+  "classifier": "LightGBM (best of nine on the held-out split, the rule the paper reports)",
+  "classifier_params": {
+    "n_estimators": 124,
+    "num_leaves": 26,
+    "max_depth": 14,
+    "learning_rate": 0.04996428011006364,
+    "min_child_samples": 7,
+    "subsample": 0.6184632584872144,
+    "colsample_bytree": 0.6399280100810597
+  },
+  "selection_rule": "best_on_test_miss_cv_order",
+  "test_accuracy": 0.8317,
+  "cv_accuracy": 0.816,
+  "cv_sd": 0.0223,
+  "majority_baseline": 0.5792,
+  "best_of_nine_on_test": 0.8317,
+  "best_of_nine_model": "LightGBM",
+  "cv_selected_model": "XGBoost",
+  "cv_selected_test_accuracy": 0.8218,
+  "cv_selected_cv_accuracy": 0.8221,
+  "n_test_wells": 707,
+  "n_unsafe_in_test": 297,
+  "missed_unsafe_rate": 0.229,
+  "preprocessing": "IterativeImputer -> VarianceThreshold -> Pearson(0.9) -> StandardScaler (fit on the training split only)",
+  "probabilities": "raw predict_proba, uncalibrated, identical to the study run",
+  "feature_medians": {
+    "Latitude": 24.1225,
+    "Longitude": 89.9262,
+    "Actual_Depth(m)": 35.0,
+    "surf_geo": 9.0
+  },
+  "decision_threshold": 0.5,
+  "risk_bands": {
+    "lower": "<0.34",
+    "elevated": "0.34-0.66",
+    "high": ">0.66"
+  },
+  "disclaimer": "This is an estimate from environmental data, not a water test. It cannot certify a well as safe. Confirm arsenic by testing the actual well water."
+}
