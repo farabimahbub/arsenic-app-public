@@ -296,8 +296,8 @@ def model_label(scope, threshold):
 def model_inputs(scope, threshold):
     """The same sentence without the accuracy.
 
-    Two separately selected models answer the two thresholds and their accuracies differ, so one
-    accuracy printed above both verdicts would be wrong for one of them.
+    Two separately selected models answer the two thresholds and their accuracies differ, nationally
+    83.2% and 87.3%, so one accuracy printed above both verdicts would be wrong for one of them.
     """
     card = MODELS[(scope, threshold)][1]
     who = "Local model (Comilla)" if scope == "local" else "National model"
