@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Shared pipeline pieces, imported by both the trainer and the app so the serialized model reloads cleanly.
-Lives in space/ because it must ship with the Hugging Face Space alongside model.joblib."""
+"""Transformers the fitted models need at load time.
+
+joblib resolves a pickled class by its module path, so the app imports this from the same place the
+trainer did. It ships beside the model files.
+"""
 import numpy as np, pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
 class PearsonCorrelationFilter(BaseEstimator, TransformerMixin):
-    """Drop one of any feature pair with |correlation| > threshold. Same filter used across the study."""
+    """Drops one feature of any pair whose absolute correlation exceeds the threshold."""
     def __init__(self, threshold=0.9):
         self.threshold = threshold
 

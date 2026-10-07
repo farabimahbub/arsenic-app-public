@@ -5,22 +5,22 @@ Assign GSB surface-geology units to well coordinates by point-in-polygon.
 Source map: "Geological Map of Bangladesh", Alam, Hasan and Khan (Geological Survey of Bangladesh)
 with Whitney (USGS), 1:1,000,000, published 1990; digitised by Persits, Wandrey, Milici (USGS) and
 Manwar (GSB), released as USGS Open File Report 97-470H. The digital coverage stores the unit in a
-field named GLG, which is the column the domain expert pointed at.
+field named GLG, which is the column this module reads.
 
 The map sheet states an overall RMS error of 250 m for the paper-to-digital transformation, so a well
 sitting within roughly 250 m of a contact cannot be assigned confidently. `dist_to_edge_km` is
 returned per well so those cases can be found rather than assumed away.
 
-No third-party dependency: the shapefile and dBASE readers below are minimal but complete for the
-polygon and character/numeric field types this coverage actually uses. Geometry is plain WGS84
-lon/lat, the same frame the well coordinates use, so no reprojection is involved.
+No third-party dependency. The shapefile and dBASE readers below are minimal but complete for the
+polygon and field types this coverage uses. Geometry is plain WGS84 lon/lat, the frame the well
+coordinates already use, so nothing is reprojected.
 """
 import struct
 
 import numpy as np
 
 # ---------------------------------------------------------------- legend, read off the map sheet
-# The 1990 sheet prints "St. Marin limestone"; the unit is St. Martin's Island limestone.
+# The 1990 sheet prints "St. Marin limestone". The unit is St. Martin's Island limestone.
 GLG_NAME = {
     "csd": "Beach and dune sand",
     "dsw": "Mangrove swamp deposit",
@@ -54,12 +54,11 @@ GLG_NAME = {
     "U": "Areas outside of Bangladesh",
 }
 
-# Stratigraphic order exactly as the map sheet prints its legend: youngest coastal Holocene first,
-# oldest bedrock last. Used as the ordinal encoding for modelling. The order comes from the published
-# legend alone and never from the arsenic labels, so it introduces no target leakage; ordering these
-# categories by their measured safety rate would be target encoding and is deliberately not done.
-# Age is the mechanistically relevant axis here: young reducing delta sediment releases arsenic,
-# old weathered and oxidised terrace material does not.
+# Stratigraphic order as the map sheet prints its legend, youngest coastal Holocene first and oldest
+# bedrock last. This is the ordinal encoding. The order comes from the published legend alone, never
+# from the arsenic labels. Ordering these categories by their measured safety rate would be target
+# encoding, and is deliberately avoided. Age is the axis that matters: young delta sediment under
+# reducing conditions releases arsenic, old weathered terrace material does not.
 GLG_STRAT_ORDER = [
     "csd",                                          # coastal
     "dsw", "dm", "dt", "de", "dsl", "dsd", "ppc",   # deltaic

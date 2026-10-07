@@ -1,25 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Serving-side feature lookup for the rebuilt app.
+Serving-side feature lookup.
 
-The two served models need five things between them, all derivable from a clicked point and a typed depth:
+Everything the two served models need follows from a clicked point and a typed depth:
 
   national   lat, lon, depth, surf_geo
-  local      lat, lon, depth, elevation, slope, twi, hand
+  local      lat, lon, depth, surf_geo, and four soil bands
 
-surf_geo comes from a point-in-polygon hit on the GSB surface-geology coverage in assets/, read by
-surface_geology.py, which carries its own shapefile and dBASE readers so the container needs no geopandas,
-shapely or fiona. The four terrain bands come from assets/terrain_comilla.tif, a crop of the national grid
-over the six sampled upazilas, sampled NEAREST so a query reads the same 30 m cell the training extraction
-read. App/build_serving_assets.py asserts both against the 160 study wells before either can ship.
+surf_geo comes from a point-in-polygon hit on the surface geology coverage in assets/, read by
+surface_geology.py. That module carries its own shapefile and dBASE readers, so the container needs no
+geopandas, shapely or fiona. The soil bands come from assets/soil_comilla.tif, sampled NEAREST so a
+query reads the cell the training extraction read.
 
-WHAT THIS MODULE NO LONGER DOES. The previous version read all 13 satellite bands out of a 17.7 GB national
-COG hosted in a private Hugging Face dataset over /vsicurl, which needed ARSENIC_GRID, ARSENIC_GRID_TOKEN,
-a bearer header and a tuned GDAL block cache to survive a 512 MB host. None of that applies now: 84 MB of
-assets sit inside the image.
+This module also reads four terrain bands, which no served model asks for. That raster is absent here,
+so terrain() reports itself unavailable.
 
-Every lookup returns (value, warnings). Warnings are user-facing sentences, so the interface can surface a
-degraded reading rather than presenting a filled-in guess as if it were measured.
+Every lookup returns (value, warnings). Warnings are user-facing sentences, so the page can show a
+degraded reading rather than pass a filled-in guess off as a measurement.
 """
 import os
 import json
@@ -36,8 +33,8 @@ BOUNDARY_PATH = os.path.join(HERE, "bd_boundary.geojson")
 BD_BBOX = dict(lat=(20.5, 26.7), lon=(88.0, 92.7))       # fallback when the geojson is absent
 
 TERRAIN_BANDS = ["elevation", "slope", "twi", "hand"]
-# R5_soil's four SoilGrids inputs, built by App/export_soil_comilla.py on the same pinned pixel grid
-# as terrain_comilla.tif, so one click reads the same cell from both rasters.
+# The four SoilGrids inputs of configuration R5_soil, cropped to Comilla on a fixed pixel grid so a
+# click reads the same cell the study trained on.
 SOIL_BANDS = ["soil_organic_carbon", "soil_clay", "soil_sand", "soil_silt"]
 
 _terrain = None          # rasterio dataset, or False after a failed open
@@ -46,10 +43,9 @@ _soil = None             # rasterio dataset, or False after a failed open
 _soil_error = None
 _geology = None          # the surface_geology module handle, or False
 
-# A GDAL dataset handle is NOT thread-safe, and the server runs sync endpoints in a threadpool. Two
-# simultaneous reads raise RasterioIOError deep inside the driver: the app asks for both thresholds at once,
-# so this fires on a single user, and it would fire again on two users at once. Serializing the sample costs
-# microseconds because the read is one pixel out of a memory-mapped local file.
+# A GDAL dataset handle is not thread-safe and the server runs sync endpoints in a threadpool. Two
+# simultaneous reads raise RasterioIOError inside the driver, which one user can trigger alone.
+# Serializing costs microseconds, because each read takes one pixel from a memory-mapped local file.
 _terrain_lock = threading.Lock()
 _soil_lock = threading.Lock()
 
@@ -213,10 +209,9 @@ def surf_geo(lat, lon):
                               "value in."]
 
     warns = []
-    # The map sheet and its FGDC metadata both state a 250 m RMS transformation error, so a point within that
-    # distance of a contact cannot be assigned confidently whichever side it lands on. This read 200 m until
-    # 2026-08-16, taken from the 200 dot/inch scan resolution quoted in the same paragraph, which is not a
-    # distance; the effect was that wells 200 to 250 m from a contact were served with no warning at all.
+    # The map sheet and its FGDC metadata both state a 250 m RMS transformation error, so a point
+    # within that distance of a contact cannot be assigned confidently to either side. Do not take
+    # this figure from the scan resolution in the same paragraph, which is dots per inch.
     if rec.get("method") == "nearest":
         km = float(rec.get("fallback_km") or 0.0)
         warns.append(f"This point is not on mapped land geology, so the nearest mapped unit was used "
