@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tubewell arsenic screening for Bangladesh</title>
+<meta name="description" content="Free pre-drilling screening of tubewell arsenic risk in Bangladesh. Pick a location and planned depth to get a model estimate against the WHO 10 µg/L guideline.">
+<link rel="canonical" href="https://arsenic-app.onrender.com/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://arsenic-app.onrender.com/">
+<meta property="og:title" content="Tubewell arsenic screening for Bangladesh">
+<meta property="og:description" content="Free pre-drilling screening of tubewell arsenic risk in Bangladesh. Pick a location and planned depth to get a model estimate against the WHO 10 µg/L guideline.">
+<meta name="google-site-verification" content="pJK3BbVhTmQ-nmnU3NbkEZ1TF0wC2X42d3OodQG8dxE">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C11 11 7 15.5 7 20a9 9 0 0018 0c0-4.5-4-9-9-17z' fill='%234C72B0'/%3E%3C/svg%3E">
 <!-- Leaflet 1.9.4 is bundled locally. Map tiles are fetched from the provider. -->
 <link rel="stylesheet" href="/static/leaflet/leaflet.css">
@@ -273,10 +280,12 @@ async function estimate() {
 $('go').onclick = estimate;
 
 const CONF_NOTE = {High: 'Stable at these inputs.',
-                   Moderate: 'Reasonably stable; treat the exact number loosely.'};
+                   Moderate: 'Treat the exact probability as a rough estimate.'};
+// The API returns 'pushes unsafe' or 'pushes safe'. Show plainer wording without changing the API.
+const DIRECTION_LABEL = {'pushes unsafe': 'Raises estimated risk', 'pushes safe': 'Lowers estimated risk'};
 
 function valuesTable(r, label) {
-  return `<details><summary>show the values used${label ? ' at ' + label : ''}</summary><table>
+  return `<details><summary>Show inputs used${label ? ' at ' + label : ''}</summary><table>
       ${Object.entries(r.features).map(([k, v]) => `<tr><td>${k}</td><td>${v ?? 'missing'}</td></tr>`).join('')}
     </table></details>`;
 }
@@ -299,8 +308,8 @@ function verdictBlock(r, own) {
       <div class="factors"><h3>Main factors at <span class="unit">${r.threshold_ugl} µg/L</span></h3>
         ${r.factors.length ? r.factors.map(f =>
           `<div class="factor"><span>${f.feature}</span>
-           <span class="dir ${f.direction.includes('unsafe') ? 'unsafe' : 'safe'}">${f.direction}</span></div>`).join('')
-          : '<div class="factor"><span>none</span></div>'}</div>
+           <span class="dir ${f.direction.includes('unsafe') ? 'unsafe' : 'safe'}">${DIRECTION_LABEL[f.direction] || f.direction}</span></div>`).join('')
+          : '<div class="factor"><span>No factors to show.</span></div>'}</div>
       ${own.values ? valuesTable(r, r.threshold_ugl + ' µg/L') : ''}
     </div>`;
 }

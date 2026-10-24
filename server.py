@@ -1,20 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-Web server: the static page plus a small JSON API over the inference core.
+The screening app's web server: the static frontend plus a small JSON API over the inference core.
 
 Run locally:  python server.py        (serves http://127.0.0.1:7860)
 
-  GET  /             the page
-  GET  /api/meta     served thresholds, model labels, the local outline, map bounds
-  GET  /api/health   model and asset status
-  POST /api/predict  {lat, lon, depth, threshold?} -> result
+Endpoints:
+  GET  /              the app (static/index.html)
+  GET  /robots.txt    crawler policy and sitemap location
+  GET  /sitemap.xml   the one public page, for search engines
+  GET  /api/meta      served thresholds, model labels, local region outline, map bounds
+  GET  /api/health    model and asset status for deployment checks
+  POST /api/predict   {lat, lon, depth, threshold?} -> structured result
 
-/api/meta says nothing about an unserved threshold. The inference core gates that, not the page.
+The inference core limits /api/meta to the thresholds currently served.
 """
 import os
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -37,6 +40,23 @@ class PredictIn(BaseModel):
 @app.get("/")
 def index():
     return FileResponse(os.path.join(HERE, "static", "index.html"))
+
+
+SITE = "https://arsenic-app.onrender.com/"
+
+
+@app.get("/robots.txt")
+def robots():
+    return PlainTextResponse(f"User-agent: *\nAllow: /\nSitemap: {SITE}sitemap.xml\n")
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+           f"  <url><loc>{SITE}</loc></url>\n"
+           "</urlset>\n")
+    return Response(xml, media_type="application/xml")
 
 
 @app.get("/api/meta")
@@ -65,5 +85,5 @@ def predict(inp: PredictIn):
 
 if __name__ == "__main__":
     import uvicorn
-    # Local runs stay on loopback. The container sets HOST=0.0.0.0.
+    # Local runs stay loopback-only; the container sets HOST=0.0.0.0.
     uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "7860")))
