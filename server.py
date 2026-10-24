@@ -6,7 +6,7 @@ Run locally:  python server.py        (serves http://127.0.0.1:7860)
 
   GET  /             the page
   GET  /api/meta     served thresholds, model labels, the local outline, map bounds
-  GET  /api/health   what loaded and what did not
+  GET  /api/health   model and asset status
   POST /api/predict  {lat, lon, depth, threshold?} -> result
 
 /api/meta says nothing about an unserved threshold. The inference core gates that, not the page.
@@ -23,8 +23,7 @@ import inference
 HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title="Arsenic Well Screening, Bangladesh")
 
-# Serves the vendored Leaflet build. Shipping it in the image drops the dependency on a script CDN.
-# Map tiles still come over the network, which is the map's one runtime dependency.
+# Serve the bundled Leaflet library locally. The browser fetches map tiles from the provider.
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 
 
@@ -47,11 +46,7 @@ def meta():
 
 @app.get("/api/health")
 def health():
-    """Deliberately verbose. Check it first on a new deployment.
-
-    A missing system library once broke the raster reader. The app fell back without erroring and
-    predictions drifted by up to 0.33, with nothing in the logs. This endpoint is how that was found.
-    """
+    """Report model settings, loaded assets and feature-reader errors."""
     import features
     return JSONResponse({
         "models_loaded": [f"{s}_as{t}" for s, t in sorted(inference.MODELS)],

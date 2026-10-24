@@ -1,7 +1,7 @@
 # Third-party data and components
 
-The MIT licence in `LICENSE` covers the code in this repository. It does not cover the data files
-below. Each one keeps the licence of its source, and the attribution has to travel with it.
+The MIT licence in `LICENSE` covers the application code. The data files and components below retain
+their source licences and attribution requirements.
 
 ## Surface geology
 
@@ -39,7 +39,7 @@ geoBoundaries. <https://www.geoboundaries.org>
 
 Licensed CC BY 3.0 IGO. <https://creativecommons.org/licenses/by/3.0/igo/>
 
-Required attribution, to travel with either file and to be shown in anything built on them:
+Required attribution for redistribution and reuse:
 
 > Administrative boundaries: geoBoundaries (gbOpen), Bangladesh ADM2 and ADM3, 2020, CC BY 3.0 IGO,
 > from Bangladesh Bureau of Statistics and OCHA ROAP via data.humdata.org
@@ -51,7 +51,7 @@ Citation:
 
 The deployed container uses an FAO GAUL national outline in place of `bd_boundary.geojson`. GAUL may not
 be redistributed without written consent from FAO, so it is not in this repository and the geoBoundaries
-rebuild stands in for it. The two agree on every point tested.
+version replaces it here. The two boundary versions agreed at the tested locations.
 
 ## Map library
 
@@ -76,10 +76,9 @@ Installed from `requirements.txt` and each under its own licence. None is redist
 ## Models
 
 `model_local_as10.joblib` and `model_national_as10.joblib` were fitted on well records from the
-British Geological Survey and DPHE national survey and on a field dataset from Cumilla. Neither
-dataset is redistributed in this repository, and neither is ours to pass on.
+British Geological Survey and DPHE national survey and on a field dataset from Cumilla. These
+datasets are not included because we do not have permission to redistribute them.
 
-The fitted objects do carry aggregates over the training wells: the scaler means and scale factors,
-the imputer statistics, and the split thresholds of the tree ensembles. They hold no well record. The
-two LIME background files that do hold records are not in this repository, and `README.md` explains
-what that changes.
+The fitted models contain training statistics: scaler means and scale factors, imputer statistics,
+and tree split thresholds. The two LIME background files contain training rows and are omitted.
+`README.md` explains how their absence changes the explanation method.

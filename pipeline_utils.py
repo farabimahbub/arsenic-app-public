@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Transformers the fitted models need at load time.
-
-joblib resolves a pickled class by its module path, so the app imports this from the same place the
-trainer did. It ships beside the model files.
-"""
+"""Shared preprocessing transformer used when fitting and loading the serialized models."""
 import numpy as np, pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 

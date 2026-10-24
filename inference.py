@@ -1,23 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-Inference core: model loading, routing, factor attribution and predict().
+"""Load models, select one by location, and return predictions and feature contributions.
 
-Routing follows where the point falls, never what the user types.
+The local model covers the eight study upazilas listed in assets/local_region.geojson.
+Other locations in Bangladesh use the national model. Locations outside Bangladesh
+are rejected. Both models take latitude, longitude and planned depth; the remaining
+features come from the bundled soil and surface-geology data.
 
-    inside the local region      ->  Comilla model
-    anywhere else in Bangladesh  ->  national model
-    outside Bangladesh           ->  refused
-
-The local region is the eight upazilas holding study wells (assets/local_region.geojson). Both models
-take the same three inputs, latitude, longitude and depth. Every other feature is read from the shipped
-assets, so the user never picks a model and never meets a form that changes shape.
-
-No served model reads sediment logged at screen depth. That sediment does not exist before the hole is
-made, so it cannot answer a pre-drilling question.
-
-The constants below hold every policy choice: which Comilla model runs, whether the national standard
-is offered, which accuracy the label quotes, and where the safe cut sits. None of them needs a retrain.
-"""
+The constants below select the local model, served thresholds, accuracy label and
+decision cutoff. The deployed app serves the 10 ug/L threshold only."""
 import os, json, warnings, threading
 
 import numpy as np
@@ -34,36 +24,26 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------- policy
 
-# Which Comilla model serves. This repository ships one. It reads location, depth, four soil bands and
-# the surface geology class, comes from configuration R5_soil, and scores 0.9375 on its 32 held-out
-# wells. That figure is best-on-test, the rule the paper reports. The paper also reports the variants
-# that read satellite bands, surface geology alone, or sediment at screen depth.
+# The local model uses R5_soil: location, depth, four soil bands and surface geology.
+# Its held-out test accuracy is 0.9375. See the model card for inputs and selection details.
 LOCAL_MODEL = "local"
 
-# 10 ug/L is the WHO guideline, 50 ug/L the Bangladesh national standard. This flag gates the models,
-# /api/meta and the page together. Hiding a threshold in the page alone would leave its numbers
-# readable from the API.
-#
-# Only the WHO guideline is served, and the 50 ug/L models are not in this repository. Two separately
-# selected models with uncalibrated scores answer the two thresholds, and nothing ties them together,
-# so the app could report a higher chance of exceeding 50 than of exceeding 10. It did so on 27 of 160
-# Comilla wells and 276 of 3,534 national wells. Anything above 50 is above 10, so that pair cannot be
-# true of a real well. The paper reports both thresholds in separate tables.
+# Serve the WHO 10 ug/L guideline only. This flag controls model loading and API metadata.
+# The study reports 50 ug/L separately. Its independently fitted, uncalibrated models
+# can give inconsistent probabilities across the two thresholds.
 SERVE_THRESHOLD_50 = False
 THRESHOLDS = [10, 50] if SERVE_THRESHOLD_50 else [10]
 
 # Which accuracy the interface quotes. "test" is the held-out figure and the one the paper reports.
 LABEL_ACCURACY = "test"
 
-# Probability of safe at or above which a point is called safe. 0.5 maximises total accuracy and treats
-# both mistakes as equally costly. On the 32 Comilla test wells that puts every error on the dangerous
-# side, an unsafe well called safe, with no false alarms. Raising it trades accuracy for caution.
+# Minimum predicted probability of the safe class for a safe classification.
+# Increasing this cutoff requires a higher predicted probability before classifying a point as safe.
 DECISION_CUTOFF = 0.5
 
 STANDARD_NAME = {10: "WHO guideline", 50: "Bangladesh standard"}
 
-# Column names as the public reads them. The models keep the study's own names, so this is presentation
-# only and never reaches a fitted pipeline.
+# Display labels only. The fitted pipelines use the original feature names.
 PRETTY = {
     "Latitude": "Latitude", "Longitude": "Longitude", "Actual_Depth(m)": "Drilling depth",
     "elevation": "Ground elevation", "slope": "Slope", "twi": "Wetness index",
@@ -106,15 +86,9 @@ LIME_SAMPLES = int(os.environ.get("LIME_SAMPLES", "5000"))
 
 
 def _explainer(scope, th):
-    """LIME over the study's own preprocessed training background, so the app's factors and the paper's
-    LIME figures explain the same thing.
+    """Cache a LIME explainer using the study's preprocessed training rows.
 
-    The background file is not in this repository, so this raises and local_factors falls back.
-
-    The lock earns its place. Endpoints are plain `def`, so uvicorn runs them in a threadpool and two
-    requests can reach the empty cache together. Both would return the same explanation, but the loser
-    of that race discards a finished explainer, which costs real memory on a small instance.
-    """
+    The lock prevents concurrent requests from building duplicate explainers."""
     with _lime_lock:
         if (scope, th) not in _explainers:
             from lime.lime_tabular import LimeTabularExplainer
@@ -126,28 +100,25 @@ def _explainer(scope, th):
 
 
 def local_factors(model, card, row_df, scope, th, k=4):
-    """The top contributing features, reproducible across calls.
+    """Return the largest feature contributions using a fixed random seed.
 
-    Falls back to occlusion against the training medians when LIME or its background is missing.
-    """
+    If LIME or its background is unavailable, compare each feature with its training median."""
     try:
         ex = _explainer(scope, th)
         prep, clf = model.named_steps["prep"], model.named_steps["clf"]
         xt = prep.transform(row_df)[0]
-        # Ask for the published number of features, then show the top k. LIME picks its selection
-        # method from num_features: at 6 or below it runs forward_selection, above 6 highest_weights.
-        # The published figures ask for min(8, n). Asking for 4 here switched method and moved the
-        # weights by 7.8e-04 on the same well. The page still lists four.
+        # Use the study's min(8, n) feature count before selecting the top k for display.
+        # LIME uses forward_selection for num_features <= 6 and highest_weights above 6.
+        # Requesting only four features can therefore change the explanation weights.
         n_ask = min(8, len(ex.feature_names))
         with _lime_lock:
-            # The sampler, discretizer and base share one RandomState, so replacing the attribute
-            # leaves the discretizer as it was. Reseeding in place makes repeated calls identical.
+            # The sampler, discretizer and base share a RandomState. Reseed it in place
+            # to reset all three and keep repeated explanations reproducible.
             ex.random_state.seed(3)
             exp = ex.explain_instance(xt, clf.predict_proba, labels=(0,), num_features=n_ask,
                                       num_samples=LIME_SAMPLES)
-        # Label 0 is unsafe, so a positive weight pushes toward unsafe. as_map() comes back ordered by
-        # descending absolute weight, so the first k are the strongest. float() is required because
-        # LIME returns numpy scalars and FastAPI's encoder refuses them.
+        # Positive weights increase the contribution toward class 0 (unsafe).
+        # as_map() sorts by absolute weight. Convert numpy scalars to float for JSON encoding.
         pairs = [(ex.feature_names[i], round(float(w), 4)) for i, w in exp.as_map()[0] if abs(w) > 1e-6]
         return pairs[:k]
     except Exception as e:
@@ -169,8 +140,9 @@ def local_factors(model, card, row_df, scope, th, k=4):
 
 
 def confidence(scope, p_unsafe, warns):
-    """Heuristic, not a calibrated interval. The local model has the tighter validation region, coverage
-    warnings pull it down, and a probability sitting near the cut pulls it down."""
+    """Return a heuristic confidence label, not a calibrated interval.
+
+    The label depends on model scope, data warnings and proximity to the risk-band cutoffs."""
     level = 2 if scope == "local" else 1
     if not warns and not (0.34 <= p_unsafe <= 0.66):
         level += 1
@@ -183,8 +155,7 @@ def confidence(scope, p_unsafe, warns):
 # ---------------------------------------------------------------- prediction
 
 def _build_row(card, lat, lon, depth, scope):
-    """Assemble the feature vector in the pipeline's own column order, looking up what the user cannot
-    supply. Column order is not cosmetic: a fitted pipeline will predict happily from a mis-ordered frame."""
+    """Look up the required features and return a DataFrame in the fitted column order."""
     warns = []
     row = {"Latitude": float(lat), "Longitude": float(lon), "Actual_Depth(m)": float(depth)}
     cols = card["features"]
@@ -210,9 +181,8 @@ def _build_row(card, lat, lon, depth, scope):
     if missing:
         return None, warns + [f"This model needs {', '.join(missing)}, which the app cannot look up."]
 
-    # Hand predict a named frame in the fitted order. scikit-learn raises on a reordered DataFrame,
-    # because the first pipeline step carries feature_names_in_ from fit time. It accepts a reordered
-    # array without complaint and returns different numbers. Never pass a list or an ndarray.
+    # Preserve the fitted column order in a named DataFrame. scikit-learn checks
+    # DataFrame column names, but a reordered array can produce incorrect predictions.
     return pd.DataFrame([{c: row[c] for c in cols}])[cols], warns
 
 
@@ -245,9 +215,8 @@ def predict(lat, lon, depth, threshold=10):
 
     row, warns = _build_row(card, lat, lon, depth, scope)
     if row is None:
-        # A point inside the local region whose raster lookup fails would otherwise get a prediction
-        # built from filled-in values, so it falls through to the national model. That model reads
-        # surf_geo from a polygon and needs no raster.
+        # Use the national model if local raster data is unavailable.
+        # The national model needs surface geology but no raster features.
         if scope == "local" and ("national", threshold) in MODELS:
             model, card = MODELS[("national", threshold)]
             scope, upazila = "national", None
@@ -268,8 +237,7 @@ def predict(lat, lon, depth, threshold=10):
         "band": band(p_unsafe), "cutoff": DECISION_CUTOFF,
         "scope": scope, "upazila": upazila,
         "model_label": model_label(scope, threshold),
-        # The inputs match at both thresholds but the model and its accuracy do not, so the page
-        # prints this once and takes the accuracy from each threshold's own card.
+        # Keep accuracy with each threshold's result, even when the input labels are shared.
         "model_inputs": model_inputs(scope, threshold),
         "confidence": conf, "confidence_dots": dots,
         "warnings": warns,
@@ -284,29 +252,23 @@ def predict(lat, lon, depth, threshold=10):
 
 
 def model_label(scope, threshold):
-    """The sentence printed above the result. Inputs and accuracy only.
+    """Format the model inputs and accuracy for display.
 
-    Well counts and miss rates stay in the model cards and in the paper.
-    """
+    Well counts and miss rates are recorded in the model cards and paper."""
     card = MODELS[(scope, threshold)][1]
     acc = card["test_accuracy"] if LABEL_ACCURACY == "test" else card["cv_accuracy"]
     return f"{model_inputs(scope, threshold)} {acc * 100:.1f}% accurate."
 
 
 def model_inputs(scope, threshold):
-    """The same sentence without the accuracy.
-
-    Two separately selected models answer the two thresholds and their accuracies differ, nationally
-    83.2% and 87.3%, so one accuracy printed above both verdicts would be wrong for one of them.
-    """
+    """Format the model's region and inputs, leaving accuracy to each threshold's result."""
     card = MODELS[(scope, threshold)][1]
     who = "Local model (Comilla)" if scope == "local" else "National model"
     return f"{who}: {card['label']}."
 
 
 def meta():
-    """Static metadata for the page. Nothing about an unserved threshold appears here, so the gate does
-    not depend on the page."""
+    """Return frontend metadata for the served models and thresholds."""
     b = features.terrain_bounds()
     labels = features.place_labels()
     models = []
@@ -319,8 +281,8 @@ def meta():
             "coverage": ("the eight upazilas around Comilla where the study sampled wells"
                          if scope == "local" else "Bangladesh"),
         })
-    # A fixed basemap image needs its bounds so the page can turn a click into a coordinate. The file
-    # is absent here and the map draws tiles instead, so this stays None.
+    # Keep metadata for the legacy image basemap when available.
+    # The current frontend uses map tiles.
     mp = os.path.join(HERE, "basemap_meta.json")
     basemap = json.load(open(mp, encoding="utf-8")) if os.path.exists(mp) else None
 
@@ -331,9 +293,7 @@ def meta():
         "map": basemap,
         "local_region": [{"name": n, "ring": r} for n, r in features.local_region_rings()],
         "local_bounds": None if b is None else dict(west=b[0], south=b[1], east=b[2], north=b[3]),
-        # Place names are not sent. The OpenStreetMap tiles already carry district, upazila, union and
-        # village names at the zoom each belongs to, so shipping 285 KB of label coordinates to every
-        # visitor solved a problem the tiles do not have.
+        # Map tiles supply place names. Only the stored attribution is returned here.
         "attribution": labels.get("attribution", ""),
         "cutoff": DECISION_CUTOFF,
         "disclaimer": next(iter(MODELS.values()))[1]["disclaimer"] if MODELS else "",

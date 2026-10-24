@@ -1,23 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-Serving-side feature lookup.
+"""Look up the environmental features used by the screening models.
 
-Everything the two served models need follows from a clicked point and a typed depth:
+The national model uses location, depth and surface geology. The local model also
+uses four SoilGrids bands from assets/soil_comilla.tif. Surface geology comes from
+the GSB coverage in assets/, read by surface_geology.py. Terrain lookups support
+alternative models and are unused by the two currently served models.
 
-  national   lat, lon, depth, surf_geo
-  local      lat, lon, depth, surf_geo, and four soil bands
-
-surf_geo comes from a point-in-polygon hit on the surface geology coverage in assets/, read by
-surface_geology.py. That module carries its own shapefile and dBASE readers, so the container needs no
-geopandas, shapely or fiona. The soil bands come from assets/soil_comilla.tif, sampled NEAREST so a
-query reads the cell the training extraction read.
-
-This module also reads four terrain bands, which no served model asks for. That raster is absent here,
-so terrain() reports itself unavailable.
-
-Every lookup returns (value, warnings). Warnings are user-facing sentences, so the page can show a
-degraded reading rather than pass a filled-in guess off as a measurement.
-"""
+Raster sampling uses the nearest cell on the study's fixed pixel grid. Lookup
+functions return values and warnings about missing data or uncertain assignments."""
 import os
 import json
 import threading
@@ -43,9 +33,8 @@ _soil = None             # rasterio dataset, or False after a failed open
 _soil_error = None
 _geology = None          # the surface_geology module handle, or False
 
-# A GDAL dataset handle is not thread-safe and the server runs sync endpoints in a threadpool. Two
-# simultaneous reads raise RasterioIOError inside the driver, which one user can trigger alone.
-# Serializing costs microseconds, because each read takes one pixel from a memory-mapped local file.
+# Serialize reads from each GDAL dataset handle: synchronous API endpoints
+# can run concurrently, and shared handles are not thread-safe.
 _terrain_lock = threading.Lock()
 _soil_lock = threading.Lock()
 
@@ -82,7 +71,7 @@ def terrain_bounds():
 
 
 def has_terrain(lat, lon):
-    """Is this point inside the terrain crop at all? Upazila routing is a separate, stricter check."""
+    """Check the terrain raster extent. Model routing uses a separate upazila check."""
     b = terrain_bounds()
     return bool(b) and b[0] <= float(lon) <= b[2] and b[1] <= float(lat) <= b[3]
 
@@ -146,7 +135,7 @@ def soil_bounds():
 
 
 def has_soil(lat, lon):
-    """Is this point inside the soil crop at all?"""
+    """Check whether the point lies within the soil raster extent."""
     b = soil_bounds()
     return bool(b) and b[0] <= float(lon) <= b[2] and b[1] <= float(lat) <= b[3]
 
@@ -194,10 +183,9 @@ def _open_geology():
 
 
 def surf_geo(lat, lon):
-    """The GSB surface-geology rank at a point -> (float | nan, warnings).
+    """Return the GSB surface-geology rank and any assignment warnings.
 
-    A point over open water, over a lake, or outside the mapped area falls back to the nearest genuine
-    geological polygon, exactly as the training assignment did, and the distance drives the warning."""
+    For water or unmapped locations, use the nearest geological polygon, as in training."""
     sg = _open_geology()
     if sg is None:
         return float("nan"), ["Surface geology is unavailable, so the national model is filling that value "
@@ -209,9 +197,8 @@ def surf_geo(lat, lon):
                               "value in."]
 
     warns = []
-    # The map sheet and its FGDC metadata both state a 250 m RMS transformation error, so a point
-    # within that distance of a contact cannot be assigned confidently to either side. Do not take
-    # this figure from the scan resolution in the same paragraph, which is dots per inch.
+    # The map and its FGDC metadata report a 250 m RMS transformation error.
+    # Warn when a point is within that distance of a geological contact.
     if rec.get("method") == "nearest":
         km = float(rec.get("fallback_km") or 0.0)
         warns.append(f"This point is not on mapped land geology, so the nearest mapped unit was used "
@@ -247,7 +234,7 @@ def _ring_contains(ring, x, y):
 
 
 def in_bangladesh(lat, lon):
-    """Point-in-polygon against the GAUL boundary; bounding box fallback if the geojson is missing."""
+    """Check the national boundary polygons, with a bounding-box fallback if the file is absent."""
     x, y = float(lon), float(lat)
     if _rings is None:
         return BD_BBOX["lat"][0] <= y <= BD_BBOX["lat"][1] and BD_BBOX["lon"][0] <= x <= BD_BBOX["lon"][1]
@@ -288,12 +275,10 @@ def _load_region():
 
 
 def in_local_region(lat, lon):
-    """(inside, upazila name or None). Decides which model runs.
+    """Return (inside, upazila name or None) for model routing.
 
-    The region is the set of upazilas that contain at least one study well, built by
-    App/build_boundaries.py. It is deliberately derived from the wells rather than from a list of thana
-    names: the six sampling thanas span eight current upazilas, because Comilla Sadar was split and two
-    clusters cross boundaries."""
+    App/build_boundaries.py selects upazilas containing study wells. The six sampling
+    thanas cover eight current upazilas after boundary changes and cross-boundary sampling."""
     reg = _load_region()
     if reg is None:
         return False, None
@@ -323,7 +308,7 @@ def place_labels():
 # ---------------------------------------------------------------- diagnostics
 
 def status():
-    """For /api/health. Names what is loaded and why anything absent is absent."""
+    """Report loaded assets and errors for /api/health."""
     ds = _open_terrain()
     return {
         "terrain": "ok" if ds is not None else "unavailable",

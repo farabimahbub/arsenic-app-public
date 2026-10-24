@@ -1,20 +1,15 @@
 # -*- coding: utf-8 -*-
-"""
-Assign GSB surface-geology units to well coordinates by point-in-polygon.
+"""Assign GSB surface-geology units to coordinates by point-in-polygon lookup.
 
-Source map: "Geological Map of Bangladesh", Alam, Hasan and Khan (Geological Survey of Bangladesh)
-with Whitney (USGS), 1:1,000,000, published 1990; digitised by Persits, Wandrey, Milici (USGS) and
-Manwar (GSB), released as USGS Open File Report 97-470H. The digital coverage stores the unit in a
-field named GLG, which is the column this module reads.
+Source: Geological Map of Bangladesh, Alam, Hasan and Khan (GSB) with Whitney
+(USGS), 1:1,000,000, 1990. The digital coverage was released by Persits, Wandrey,
+Milici and Manwar as USGS Open-File Report 97-470H. Units are stored in GLG.
 
-The map sheet states an overall RMS error of 250 m for the paper-to-digital transformation, so a well
-sitting within roughly 250 m of a contact cannot be assigned confidently. `dist_to_edge_km` is
-returned per well so those cases can be found rather than assumed away.
+The map reports a 250 m RMS paper-to-digital transformation error.
+dist_to_edge_km records proximity to a unit boundary for uncertainty warnings.
 
-No third-party dependency. The shapefile and dBASE readers below are minimal but complete for the
-polygon and field types this coverage uses. Geometry is plain WGS84 lon/lat, the frame the well
-coordinates already use, so nothing is reprojected.
-"""
+The shapefile and dBASE readers handle the polygon and attribute types in this
+coverage. Coordinates are WGS84 longitude and latitude; no reprojection is needed."""
 import struct
 
 import numpy as np
@@ -54,11 +49,8 @@ GLG_NAME = {
     "U": "Areas outside of Bangladesh",
 }
 
-# Stratigraphic order as the map sheet prints its legend, youngest coastal Holocene first and oldest
-# bedrock last. This is the ordinal encoding. The order comes from the published legend alone, never
-# from the arsenic labels. Ordering these categories by their measured safety rate would be target
-# encoding, and is deliberately avoided. Age is the axis that matters: young delta sediment under
-# reducing conditions releases arsenic, old weathered terrace material does not.
+# Encode units from youngest to oldest using the source map's legend.
+# The ordering is fixed independently of the arsenic measurements.
 GLG_STRAT_ORDER = [
     "csd",                                          # coastal
     "dsw", "dm", "dt", "de", "dsl", "dsd", "ppc",   # deltaic

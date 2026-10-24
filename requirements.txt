@@ -1,5 +1,4 @@
-# Pinned to the training environment: the serialized models require the same scikit-learn (and friends)
-# that fit them, and the study's determinism claims assume these exact versions.
+# Use the training environment's package versions to load the serialized models consistently.
 scikit-learn==1.9.0
 xgboost==3.2.0
 lightgbm==4.6.0
